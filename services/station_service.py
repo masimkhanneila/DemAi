@@ -1,12 +1,3 @@
-"""Бизнес-логика станций мониторинга воздуха.
-
-Станции хранятся в store.stations как обычные словари:
-    stations[id] = {"id": int, "name": str, "location": str, "pm25": float}
-
-Person 2 / Person 3 могут читать PM2.5 так: store.stations[station_id]["pm25"]
-или через get_station_pm25(station_id).
-"""
-
 from fastapi import HTTPException, status
 
 import store
@@ -16,7 +7,7 @@ _next_id = 1
 
 
 def _generate_id() -> int:
-    # Счётчик не уменьшается, поэтому ID удалённой станции не переиспользуется
+    
     global _next_id
     new_id = max(_next_id, max(store.stations, default=0) + 1)
     _next_id = new_id + 1
@@ -24,7 +15,7 @@ def _generate_id() -> int:
 
 
 def classify_air_quality(pm25: float) -> AirQuality:
-    """Low: < 15, Moderate: 15 <= x < 35, High: >= 35 (см. README)."""
+    
     if pm25 < 15:
         return AirQuality.low
     if pm25 < 35:
@@ -47,7 +38,6 @@ def _get_or_404(station_id: int) -> dict:
 
 
 def _route_station_id(route):
-    # Маршрут может храниться как dict или как Pydantic-модель — поддерживаем оба
     if isinstance(route, dict):
         return route.get("station_id")
     return getattr(route, "station_id", None)
@@ -57,7 +47,6 @@ def is_station_used_by_route(station_id: int) -> bool:
     return any(_route_station_id(route) == station_id for route in store.routes.values())
 
 
-# ---------- функции, которые вызывает роутер ----------
 
 def create_station(data: StationCreate) -> dict:
     station_id = _generate_id()
@@ -96,7 +85,7 @@ def delete_station(station_id: int) -> None:
     del store.stations[station_id]
 
 
-# ---------- хелперы для других частей API ----------
+
 
 def station_exists(station_id: int) -> bool:
     return station_id in store.stations
