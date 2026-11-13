@@ -16,7 +16,6 @@ def create_route(payload: RouteCreate):
     return route_service.create_route(payload)
 
 
-# Declare /compare BEFORE /{route_id} to avoid path ambiguity.
 @router.get("/compare", response_model=RouteComparison)
 def compare_routes(start: str = Query(min_length=1), end: str = Query(min_length=1)):
     return route_service.compare_routes(start, end)
