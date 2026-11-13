@@ -36,7 +36,6 @@ def update_route(route_id: int, payload: RouteUpdate) -> dict:
         raise HTTPException(status_code=422, detail="Provide a field to update")
 
     updated = {**existing, **changes}
-    # Validate the complete result, not just the fields sent in PATCH.
     try:
         validated = RouteCreate.model_validate(updated)
     except ValidationError as exc:
@@ -72,7 +71,6 @@ def get_route_exposure(route_id: int) -> dict:
     return {
         **route,
         "pm25": pm25,
-        # Simplified educational comparison score, not a medical exposure estimate.
         "exposure_score": round(pm25 * route["duration_min"], 2),
     }
 
