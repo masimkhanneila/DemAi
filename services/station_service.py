@@ -1,21 +1,13 @@
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-import store
+from models.station import Station
 from schemas.station import AirQuality, StationCreate, StationUpdate
-
-_next_id = 1
-
-
-def _generate_id() -> int:
-    
-    global _next_id
-    new_id = max(_next_id, max(store.stations, default=0) + 1)
-    _next_id = new_id + 1
-    return new_id
 
 
 def classify_air_quality(pm25: float) -> AirQuality:
-    
     if pm25 < 15:
         return AirQuality.low
     if pm25 < 35:
@@ -23,12 +15,18 @@ def classify_air_quality(pm25: float) -> AirQuality:
     return AirQuality.high
 
 
-def _to_response(station: dict) -> dict:
-    return {**station, "air_quality": classify_air_quality(station["pm25"])}
+def _to_response(station: Station) -> dict:
+    return {
+        "id": station.id,
+        "name": station.name,
+        "location": station.location,
+        "pm25": station.pm25,
+        "air_quality": classify_air_quality(station.pm25),
+    }
 
 
-def _get_or_404(station_id: int) -> dict:
-    station = store.stations.get(station_id)
+def _get_or_404(db: Session, station_id: int) -> Station:
+    station = db.get(Station, station_id)
     if station is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -37,59 +35,61 @@ def _get_or_404(station_id: int) -> dict:
     return station
 
 
-def _route_station_id(route):
-    if isinstance(route, dict):
-        return route.get("station_id")
-    return getattr(route, "station_id", None)
+def _commit(db: Session, conflict_detail: str) -> None:
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict_detail)
 
 
-def is_station_used_by_route(station_id: int) -> bool:
-    return any(_route_station_id(route) == station_id for route in store.routes.values())
-
-
-
-def create_station(data: StationCreate) -> dict:
-    station_id = _generate_id()
-    station = {"id": station_id, **data.model_dump()}
-    store.stations[station_id] = station
+def create_station(db: Session, data: StationCreate) -> dict:
+    station = Station(**data.model_dump())
+    db.add(station)
+    _commit(db, "Station violates a database constraint")
+    db.refresh(station)
     return _to_response(station)
 
 
-def list_stations() -> list[dict]:
-    return [_to_response(s) for s in store.stations.values()]
+def list_stations(db: Session) -> list[dict]:
+    stations = db.scalars(select(Station).order_by(Station.id)).all()
+    return [_to_response(s) for s in stations]
 
 
-def get_station(station_id: int) -> dict:
-    return _to_response(_get_or_404(station_id))
+def get_station(db: Session, station_id: int) -> dict:
+    return _to_response(_get_or_404(db, station_id))
 
 
-def update_station(station_id: int, data: StationUpdate) -> dict:
-    station = _get_or_404(station_id)
+def update_station(db: Session, station_id: int, data: StationUpdate) -> dict:
+    station = _get_or_404(db, station_id)
     changes = data.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(
             status_code=422,
             detail="Provide at least one field to update: name, location, pm25",
         )
-    station.update(changes)
+    for field, value in changes.items():
+        setattr(station, field, value)
+    _commit(db, "Station violates a database constraint")
+    db.refresh(station)
     return _to_response(station)
 
 
-def delete_station(station_id: int) -> None:
-    _get_or_404(station_id)
-    if is_station_used_by_route(station_id):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Station {station_id} is used by a route and cannot be deleted",
-        )
-    del store.stations[station_id]
+def delete_station(db: Session, station_id: int) -> None:
+    station = _get_or_404(db, station_id)
+    conflict = f"Station {station_id} is used by a route and cannot be deleted"
+    if station.routes:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=conflict)
+    db.delete(station)
+    
+    _commit(db, conflict)
 
 
 
 
-def station_exists(station_id: int) -> bool:
-    return station_id in store.stations
+def station_exists(db: Session, station_id: int) -> bool:
+    return db.get(Station, station_id) is not None
 
 
-def get_station_pm25(station_id: int) -> float:
-    return _get_or_404(station_id)["pm25"]
+def get_station_pm25(db: Session, station_id: int) -> float:
+    return _get_or_404(db, station_id).pm25
