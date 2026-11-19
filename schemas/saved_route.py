@@ -1,10 +1,11 @@
 from typing import Annotated, Literal
-
 from pydantic import BaseModel, StringConstraints, field_validator
 
 
 RoutePreference = Literal["fastest", "cleanest"]
-RouteLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+RouteLabel = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+]
 
 
 class SavedRouteCreate(BaseModel):

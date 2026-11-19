@@ -1,16 +1,19 @@
-from threading import Lock
-
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload
 
+from models.route import Route
+from models.saved_route import SavedRoute
 from schemas.saved_route import SavedRouteCreate, SavedRouteUpdate
-from store import routes, saved_routes, stations
 
 
-_saved_routes_lock = Lock()
-
-
-def _get_saved_route(saved_route_id: int) -> dict:
-    saved_route = saved_routes.get(saved_route_id)
+def _get_saved_route(saved_route_id: int, db: Session) -> SavedRoute:
+    saved_route = db.get(
+        SavedRoute,
+        saved_route_id,
+        options=(joinedload(SavedRoute.route).joinedload(Route.station),),
+    )
     if saved_route is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Saved route not found"
@@ -18,71 +21,101 @@ def _get_saved_route(saved_route_id: int) -> dict:
     return saved_route
 
 
-def _with_exposure(saved_route: dict) -> dict:
-    route = routes.get(saved_route["route_id"])
+def _get_route(route_id: int, db: Session) -> Route:
+    route = db.get(Route, route_id)
     if route is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
         )
 
-    station = stations.get(route["station_id"])
-    if station is None:
+    if route.station is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Referenced monitoring station is missing",
         )
 
-    exposure_score = round(float(station["pm25"]) * route["duration_min"], 2)
-    return {**saved_route, "exposure_score": exposure_score}
+    return route
 
 
-def _save(saved_route: dict) -> dict:
-    response = _with_exposure(saved_route)
-    saved_route_id = saved_route["id"]
-    if any(
-        existing["user_id"] == saved_route["user_id"]
-        and existing["route_id"] == saved_route["route_id"]
-        for existing_id, existing in saved_routes.items()
-        if existing_id != saved_route_id
-    ):
+def _with_exposure(saved_route: SavedRoute) -> dict:
+    route = saved_route.route
+    if route is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Route not found"
+        )
+    station = route.station
+    if station is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This route is already saved by the user",
+            detail="Referenced monitoring station is missing",
         )
-
-    saved_routes[saved_route_id] = saved_route
-    return response
-
-
-def create_saved_route(payload: SavedRouteCreate) -> dict:
-    with _saved_routes_lock:
-        saved_route_id = max(saved_routes, default=0) + 1
-        return _save({"id": saved_route_id, **payload.model_dump()})
-
-
-def list_saved_routes() -> list[dict]:
-    with _saved_routes_lock:
-        return [_with_exposure(saved_route) for saved_route in saved_routes.values()]
+    return {
+        "id": saved_route.id,
+        "user_id": saved_route.user_id,
+        "route_id": saved_route.route_id,
+        "label": saved_route.label,
+        "preference": saved_route.preference,
+        "exposure_score": round(float(station.pm25) * route.duration_min, 2),
+    }
 
 
-def get_saved_route(saved_route_id: int) -> dict:
-    with _saved_routes_lock:
-        return _with_exposure(_get_saved_route(saved_route_id))
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        detail = "Database constraint or relationship conflict"
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            detail = "This route is already saved by the user"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=detail
+        ) from exc
 
 
-def update_saved_route(saved_route_id: int, payload: SavedRouteUpdate) -> dict:
-    with _saved_routes_lock:
-        saved_route = _get_saved_route(saved_route_id)
-        changes = payload.model_dump(exclude_unset=True)
-        if not changes:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Provide a field to update",
-            )
-        return _save({**saved_route, **changes})
+def _save(saved_route: SavedRoute, db: Session) -> dict:
+    db.add(saved_route)
+    _commit(db)
+    db.refresh(saved_route)
+    return _with_exposure(saved_route)
 
 
-def delete_saved_route(saved_route_id: int) -> None:
-    with _saved_routes_lock:
-        _get_saved_route(saved_route_id)
-        del saved_routes[saved_route_id]
+def create_saved_route(payload: SavedRouteCreate, db: Session) -> dict:
+    route = _get_route(payload.route_id, db)
+    saved_route = SavedRoute(**payload.model_dump(), route=route)
+    return _save(saved_route, db)
+
+
+def list_saved_routes(db: Session) -> list[dict]:
+    saved_routes = db.scalars(
+        select(SavedRoute)
+        .options(joinedload(SavedRoute.route).joinedload(Route.station))
+        .order_by(SavedRoute.id)
+    ).all()
+    return [_with_exposure(saved_route) for saved_route in saved_routes]
+
+
+def get_saved_route(saved_route_id: int, db: Session) -> dict:
+    return _with_exposure(_get_saved_route(saved_route_id, db))
+
+
+def update_saved_route(
+    saved_route_id: int, payload: SavedRouteUpdate, db: Session
+) -> dict:
+    saved_route = _get_saved_route(saved_route_id, db)
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Provide a field to update",
+        )
+    route = _get_route(changes.get("route_id", saved_route.route_id), db)
+    for field, value in changes.items():
+        setattr(saved_route, field, value)
+    saved_route.route = route
+    return _save(saved_route, db)
+
+
+def delete_saved_route(saved_route_id: int, db: Session) -> None:
+    saved_route = _get_saved_route(saved_route_id, db)
+    db.delete(saved_route)
+    _commit(db)
