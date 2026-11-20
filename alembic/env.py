@@ -4,7 +4,6 @@ from logging.config import fileConfig
 from alembic import context
 from database import Base, engine
 
-# Register all SQLAlchemy models
 import models
 
 config = context.config

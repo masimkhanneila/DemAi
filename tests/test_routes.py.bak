@@ -1,0 +1,331 @@
+"""
+
+TEST 1 — POST /stations
+Expected: 201 Created
+Expected air_quality: high
+
+{
+  "name": "Medeu",
+  "location": "Almaty",
+  "pm25": 80
+}
+
+
+TEST 2 — POST /stations
+Expected: 201 Created
+Expected air_quality: moderate
+{
+  "name": "Center",
+  "location": "Almaty",
+  "pm25": 20
+}
+
+TEST 3 — GET /stations
+Expected: 200 OK
+Expected: List containing both stations
+
+TEST 4 — GET /stations/1
+Expected: 200 OK
+Expected: Medeu station
+
+TEST 5 — GET /stations/999
+Expected: 404 Not Found
+
+
+TEST 6 — PATCH /stations/1
+Expected: 200 OK
+Expected: Updated station name
+
+{
+  "name": "Upper Medeu"
+}
+
+TEST 7 — POST /stations
+Expected: 422 Unprocessable Entity
+Reason: PM2.5 cannot be negative
+
+{
+  "name": "Invalid Station",
+  "location": "Almaty",
+  "pm25": -10
+}
+
+TEST 8 — PATCH /stations/1
+Expected: 422 Unprocessable Entity
+Reason: Explicit null is not allowed
+
+{
+  "pm25": null
+}
+
+TEST 9 — PATCH /stations/1
+Expected: 422 Unprocessable Entity
+Reason: Empty update body
+
+{}
+
+TEST 10 — POST /routes
+Expected: 201 Created
+Expected route ID: 1
+
+{
+  "start": "Medeu",
+  "end": "Center",
+  "distance_km": 2.3,
+  "duration_min": 15,
+  "station_id": 1
+}
+
+TEST 11 — POST /routes
+Expected: 201 Created
+Expected route ID: 2
+
+{
+  "start": "Medeu",
+  "end": "Center",
+  "distance_km": 3.5,
+  "duration_min": 25,
+  "station_id": 2
+}
+
+TEST 12 — GET /routes
+Expected: 200 OK
+Expected: List of two routes
+
+TEST 13 — GET /routes/1
+Expected: 200 OK
+Expected: First route
+
+TEST 14 — GET /routes/999
+Expected: 404 Not Found
+
+TEST 15 — GET /routes/1/exposure
+Expected: 200 OK
+Expected:
+  pm25 = 80
+  exposure_score = 1200
+
+TEST 16 — GET /routes/2/exposure
+Expected: 200 OK
+Expected:
+  pm25 = 20
+  exposure_score = 500
+
+
+TEST 17 — GET /routes/compare
+Query parameters:
+  start = Medeu
+  end = Center
+
+Expected: 200 OK
+Expected:
+  total_routes = 2
+  fastest = Route 1
+  cleanest = Route 2
+
+
+TEST 18 — GET /routes/compare
+Query parameters:
+  start = Airport
+  end = University
+
+Expected: 404 Not Found
+Reason: No matching routes
+
+TEST 19 — PATCH /routes/1
+Expected: 200 OK
+Expected: duration_min changes to 18
+
+{
+  "duration_min": 18
+}
+
+TEST 20 — PATCH /routes/1
+Expected: 422 Unprocessable Entity
+Reason: After merging, start and end become the same
+
+{
+  "start": "Center"
+}
+
+TEST 21 — POST /routes
+Expected: 422 Unprocessable Entity
+Reason: Start and end cannot be the same
+
+{
+  "start": "Medeu",
+  "end": "MEDEU",
+  "distance_km": 2.5,
+  "duration_min": 15,
+  "station_id": 1
+}
+
+TEST 22 — POST /routes
+Expected: 422 Unprocessable Entity
+Reason: Distance must be greater than zero
+
+{
+  "start": "Medeu",
+  "end": "Center",
+  "distance_km": -5,
+  "duration_min": 15,
+  "station_id": 1
+}
+
+TEST 23 — POST /routes
+Expected: 404 Not Found
+Reason: Monitoring station does not exist
+
+{
+  "start": "Medeu",
+  "end": "Center",
+  "distance_km": 2.5,
+  "duration_min": 15,
+  "station_id": 999
+}
+
+TEST 24 — PATCH /routes/1
+Expected: 422 Unprocessable Entity
+Reason: Empty update body
+
+{}
+
+TEST 25 — PATCH /routes/1
+Expected: 422 Unprocessable Entity
+Reason: Explicit null is not allowed
+
+{
+  "duration_min": null
+}
+
+TEST 26 — POST /saved-routes
+Expected: 201 Created
+Expected:
+  Saved route ID = 1
+  exposure_score = 500
+
+  {
+  "user_id": 1,
+  "route_id": 2,
+  "label": "My clean walking route",
+  "preference": "cleanest"
+}
+
+TEST 27 — GET /saved-routes
+Expected: 200 OK
+Expected: List containing the saved route
+
+TEST 28 — GET /saved-routes/1
+Expected: 200 OK
+Expected: Saved route details
+
+TEST 29 — GET /saved-routes/999
+Expected: 404 Not Found
+
+
+TEST 30 — POST /saved-routes
+Expected: 409 Conflict
+Reason: Same user has already saved Route 2
+
+{
+  "user_id": 1,
+  "route_id": 2,
+  "label": "Duplicate route",
+  "preference": "fastest"
+}
+
+TEST 31 — PATCH /saved-routes/1
+Expected: 200 OK
+Expected: Updated label
+
+{
+  "label": "My favorite route"
+}
+
+TEST 32 — POST /saved-routes
+Expected: 422 Unprocessable Entity
+Reason: Invalid preference
+
+{
+  "user_id": 1,
+  "route_id": 1,
+  "label": "Morning Walk",
+  "preference": "safest"
+}
+
+TEST 33 — PATCH /saved-routes/1
+Expected: 422 Unprocessable Entity
+Reason: Explicit null is not allowed
+
+{
+  "label": null
+}
+
+TEST 34 — DELETE /routes/2
+Expected: 409 Conflict
+Reason: Route 2 is referenced by Saved Route 1
+
+TEST 35 — DELETE /stations/2
+Expected: 409 Conflict
+Reason: Station 2 is used by Route 2
+
+
+TEST 36 — PATCH /stations/2
+Expected: 200 OK
+Expected: PM2.5 changes from 20 to 100
+
+{
+  "pm25": 100
+}
+
+TEST 37 — GET /routes/2/exposure
+Expected: 200 OK
+Expected:
+  pm25 = 100
+  duration_min = 25
+  exposure_score = 2500
+
+TEST 38 — GET /saved-routes/1
+Expected: 200 OK
+Expected:
+  exposure_score = 2500
+
+TEST 39 — GET /routes/compare
+Query parameters:
+  start = Medeu
+  end = Center
+
+Expected: 200 OK
+Expected:
+  fastest = Route 1
+  cleanest = Route 1
+
+
+TEST 40 — DELETE /saved-routes/1
+Expected: 204 No Content
+
+TEST 41 — DELETE /routes/2
+Expected: 204 No Content
+
+TEST 42 — DELETE /routes/1
+Expected: 204 No Content
+
+TEST 43 — DELETE /stations/2
+Expected: 204 No Content
+
+TEST 44 — DELETE /stations/1
+Expected: 204 No Content
+
+TEST 45 — GET /routes
+Expected: 200 OK
+Expected: []
+
+TEST 46 — GET /stations
+Expected: 200 OK
+Expected: []
+
+TEST 47 — GET /saved-routes
+Expected: 200 OK
+Expected: []
+
+"""

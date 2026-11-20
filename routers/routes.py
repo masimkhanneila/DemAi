@@ -2,14 +2,9 @@
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
+
 from database import get_db
-from schemas.route import (
-    RouteComparison,
-    RouteCreate,
-    RouteResponse,
-    RouteUpdate,
-    RouteWithExposure,
-)
+from schemas.route import (RouteComparison,RouteCreate,RouteResponse,RouteUpdate,RouteWithExposure,)
 from services import route_service
 
 

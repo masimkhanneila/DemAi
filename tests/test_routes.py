@@ -14,8 +14,6 @@ from models.route import Route
 from models.saved_route import SavedRoute
 from models.station import Station
 
-
-# Always use a separate PostgreSQL database for testing.
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -28,7 +26,6 @@ main_url = make_url(DATABASE_URL)
 if main_url.database != "demai_db":
     raise RuntimeError("Unexpected development database")
 
-# Same credentials, but a different database
 test_url = main_url.set(database="demai_test_db")
 
 test_engine = create_engine(test_url)
