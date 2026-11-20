@@ -54,10 +54,7 @@ def _to_dict(route: Route) -> dict:
 
 
 def list_routes(db: Session) -> list[dict]:
-    routes = db.scalars(
-        select(Route).order_by(Route.id)
-    ).all()
-
+    routes = db.scalars(select(Route).order_by(Route.id)).all()
     return [_to_dict(route) for route in routes]
 
 

@@ -35,15 +35,8 @@ class Route(Base):
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    station_id: Mapped[int] = mapped_column(
-        ForeignKey("stations.id", ondelete="RESTRICT"),
-        nullable=False
-    )
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id", ondelete="RESTRICT"),nullable=False)
 
-    station: Mapped["Station"] = relationship(
-        back_populates="routes"
-    )
+    station: Mapped["Station"] = relationship(back_populates="routes")
 
-    saved_routes: Mapped[list["SavedRoute"]] = relationship(
-        back_populates="route"
-    )
+    saved_routes: Mapped[list["SavedRoute"]] = relationship(back_populates="route")
