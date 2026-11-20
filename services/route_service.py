@@ -75,11 +75,7 @@ def create_route(payload: RouteCreate, db: Session) -> dict:
     return _to_dict(route)
 
 
-def update_route(
-    route_id: int,
-    payload: RouteUpdate,
-    db: Session,
-) -> dict:
+def update_route(route_id: int,payload: RouteUpdate,db: Session,) -> dict:
     route = _get_existing_route(route_id, db)
 
     changes = payload.model_dump(exclude_unset=True)
