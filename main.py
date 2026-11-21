@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from routers.stations import router as stations_router
 from routers.routes import router as routes_router
 from routers.saved_routes import router as saved_routes_router
+from routers.auth import router as auth_router
 
 
 app = FastAPI(
@@ -16,6 +17,7 @@ app = FastAPI(
 app.include_router(stations_router)
 app.include_router(routes_router)
 app.include_router(saved_routes_router)
+app.include_router(auth_router)
 
 
 @app.get("/", tags=["Health"])
