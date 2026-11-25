@@ -1,12 +1,16 @@
-
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-
 from database import get_db
-from schemas.route import (RouteComparison,RouteCreate,RouteResponse,RouteUpdate,RouteWithExposure,)
+from dependencies.permissions import require_admin
+from schemas.route import (
+    RouteComparison,
+    RouteCreate,
+    RouteResponse,
+    RouteUpdate,
+    RouteWithExposure,
+)
 from services import route_service
-
 
 router = APIRouter(prefix="/routes", tags=["Routes"])
 
@@ -20,6 +24,7 @@ def list_routes(db: Session = Depends(get_db)):
     "",
     response_model=RouteResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
 )
 def create_route(
     payload: RouteCreate,
@@ -56,7 +61,11 @@ def get_route_exposure(
     return route_service.get_route_exposure(route_id, db)
 
 
-@router.patch("/{route_id}", response_model=RouteResponse)
+@router.patch(
+    "/{route_id}",
+    response_model=RouteResponse,
+    dependencies=[Depends(require_admin)],
+)
 def update_route(
     route_id: int,
     payload: RouteUpdate,
@@ -68,6 +77,7 @@ def update_route(
 @router.delete(
     "/{route_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
 )
 def delete_route(
     route_id: int,
