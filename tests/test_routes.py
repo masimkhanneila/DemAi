@@ -1,87 +1,6 @@
-
-import os
-
-import pytest
-from dotenv import load_dotenv
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
-
-from database import get_db
-from main import app
 from models.route import Route
 from models.saved_route import SavedRoute
 from models.station import Station
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing")
-
-main_url = make_url(DATABASE_URL)
-
-if main_url.database != "demai_db":
-    raise RuntimeError("Unexpected development database")
-
-test_url = main_url.set(database="demai_test_db")
-
-test_engine = create_engine(test_url)
-
-
-@pytest.fixture
-def db_session():
-    connection = test_engine.connect()
-    transaction = connection.begin()
-
-    db = Session(
-        bind=connection,
-        join_transaction_mode="create_savepoint",
-        expire_on_commit=False,
-    )
-
-    try:
-        yield db
-    finally:
-        db.close()
-        transaction.rollback()
-        connection.close()
-
-
-@pytest.fixture
-def station_ids(db_session):
-    first = Station(
-        name="Medeu",
-        location="Almaty",
-        pm25=80,
-    )
-    second = Station(
-        name="Center",
-        location="Almaty",
-        pm25=20,
-    )
-
-    db_session.add_all([first, second])
-    db_session.flush()
-
-    return first.id, second.id
-
-
-@pytest.fixture
-def client(db_session, station_ids):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
-
 
 def route_payload(station_id, **changes):
     payload = {
@@ -100,9 +19,6 @@ def create(client, station_id, **changes):
         "/routes",
         json=route_payload(station_id, **changes),
     )
-
-
-# ---------- CREATE ----------
 
 def test_create_route(client, station_ids, db_session):
     response = create(client, station_ids[0])
@@ -129,8 +45,6 @@ def test_list_and_get_route(client, station_ids):
     assert retrieved.json()["start"] == "Medeu"
 
 
-# ---------- NOT FOUND ----------
-
 def test_missing_route(client):
     response = client.get("/routes/999999")
     assert response.status_code == 404
@@ -140,8 +54,6 @@ def test_missing_station(client):
     response = create(client, 999999)
     assert response.status_code == 404
 
-
-# ---------- VALIDATION ----------
 
 def test_invalid_distance(client, station_ids):
     response = create(
@@ -172,9 +84,6 @@ def test_same_location(client, station_ids):
         end="medeu",
     )
     assert response.status_code == 422
-
-
-# ---------- UPDATE ----------
 
 def test_patch_route(client, station_ids):
     created = create(client, station_ids[0])
@@ -233,8 +142,6 @@ def test_patch_nonexistent_station(client, station_ids):
     assert response.status_code == 404
 
 
-# ---------- EXPOSURE ----------
-
 def test_exposure_uses_latest_pm25(
     client, station_ids, db_session
 ):
@@ -252,9 +159,6 @@ def test_exposure_uses_latest_pm25(
     response = client.get(f"/routes/{route_id}/exposure")
     assert response.status_code == 200
     assert response.json()["exposure_score"] == 150
-
-
-# ---------- COMPARISON ----------
 
 def test_compare_fastest_and_cleanest(
     client, station_ids
@@ -293,8 +197,6 @@ def test_compare_unavailable(client):
     assert response.status_code == 404
 
 
-# ---------- DELETE ----------
-
 def test_delete(client, station_ids):
     created = create(client, station_ids[0])
     route_id = created.json()["id"]
@@ -307,13 +209,13 @@ def test_delete(client, station_ids):
 
 
 def test_delete_saved_route_conflict(
-    client, station_ids, db_session
+    client, station_ids, db_session, accounts
 ):
     created = create(client, station_ids[0])
     route_id = created.json()["id"]
 
     saved = SavedRoute(
-        user_id=1,
+        user_id=accounts["admin"].id,
         route_id=route_id,
         label="Walk",
         preference="cleanest",

@@ -23,7 +23,7 @@ class SavedRoute(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-        user_id: Mapped[int] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
         ForeignKey(
             "users.id",
             name="fk_saved_routes_user_id_users",
