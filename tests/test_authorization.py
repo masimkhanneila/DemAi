@@ -333,5 +333,5 @@ def test_saved_route_foreign_key_restricts_deleting_its_owner(db_session, privat
     with pytest.raises(IntegrityError) as error:
         with db_session.begin_nested():
             db_session.execute(delete(User).where(User.id == owner_id))
-    assert error.value.orig.sqlstate == "23503"
+    assert error.value.orig.sqlstate == "23001"
     assert error.value.orig.diag.constraint_name == "fk_saved_routes_user_id_users"
