@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from models.station import Station
 from schemas.station import AirQuality, StationCreate, StationUpdate
+from services import air_quality_service
 
 
 def classify_air_quality(pm25: float) -> AirQuality:
@@ -22,6 +23,8 @@ def _to_response(station: Station) -> dict:
         "location": station.location,
         "pm25": station.pm25,
         "air_quality": classify_air_quality(station.pm25),
+        "latitude": station.latitude,
+        "longitude": station.longitude,
     }
 
 
@@ -66,7 +69,7 @@ def update_station(db: Session, station_id: int, data: StationUpdate) -> dict:
     if not changes:
         raise HTTPException(
             status_code=422,
-            detail="Provide at least one field to update: name, location, pm25",
+            detail="Provide at least one field to update: name, location, pm25, latitude, longitude",
         )
     for field, value in changes.items():
         setattr(station, field, value)
@@ -93,3 +96,32 @@ def station_exists(db: Session, station_id: int) -> bool:
 
 def get_station_pm25(db: Session, station_id: int) -> float:
     return _get_or_404(db, station_id).pm25
+
+
+def refresh_air_quality(db: Session, station_id: int) -> dict:
+    """Fetch the current PM2.5 for the station's coordinates from Open-Meteo and save it.
+
+    If the external API fails, the stored PM2.5 is left unchanged, so route
+    exposure calculations keep working with the last known value.
+    """
+    station = _get_or_404(db, station_id)
+
+    if station.latitude is None or station.longitude is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Station {station_id} has no coordinates; set latitude and longitude first",
+        )
+
+    try:
+        reading = air_quality_service.fetch_current_pm25(station.latitude, station.longitude)
+    except air_quality_service.AirQualityTimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+    except air_quality_service.AirQualityUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except air_quality_service.AirQualityError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    station.pm25 = reading.pm25
+    _commit(db, "Station violates a database constraint")
+    db.refresh(station)
+    return _to_response(station)
